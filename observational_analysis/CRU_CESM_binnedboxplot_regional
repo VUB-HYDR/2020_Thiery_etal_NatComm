@@ -1,0 +1,333 @@
+"""SREX_irr_boxplots.py
+
+author: Auke Visser
+date: 12.12.2016
+
+This script makes scatter plots of df_irr and dT based to figure
+out the type of response between df_irr and dT.
+
+"""
+
+import netCDF4 as nc
+import numpy as np
+import scipy
+import os
+import matplotlib
+matplotlib.rcParams['backend'] = "Qt4Agg"
+from mpl_toolkits.basemap import Basemap
+from matplotlib.colors import LogNorm
+import matplotlib.pyplot as plt
+from scipy import stats
+import matplotlib.lines as mlines
+
+execfile('extract_T_irr.py')
+execfile('calc_irr_diff.py')
+execfile('calc_irr_impact_regr.py')
+execfile('calc_irr_impact_thres.py')
+
+#################################
+#User-specified options
+#################################
+SREX_region = 'SAS'
+
+
+temp_product_CRU = "tmx_max"
+temp_product_CESM = "TREFHTMX"
+response = "PD"
+t_res = "seasonal"
+
+seas_ind = 2
+month_ind = 5
+
+yr_start1 = 1901
+yr_end1 = 1930
+yr_start2 = 1981
+yr_end2 = 2010
+
+thres_irr_PD = 0.02
+
+p_value = 0.01
+figsave = False
+figformat = 'png'
+#################################
+
+f, axs = plt.subplots(2,2,sharex='col',sharey='row',figsize=(20,10))
+
+#Perform calculations for different threshold values
+_,_,f_irr_CRU = calc_irr_diff('CRU_CESM',response,yr_start1,yr_end1,yr_start2,yr_end2)
+
+CESM_irrfile = nc.Dataset('/home/wthiery/documents/research/cesm_present/postprocessing/constants/f.e122.F1850PDC5.f09_g16.irrigation-io192.001_constants.nc','r')
+f_irr_CESM = CESM_irrfile.variables['PCT_IRRIG'][:]
+
+#Calculate dT_tot
+T_out_CRU = extract_T_irr('CRU_CESM','tmx_max','PD',t_res,yr_start1,yr_end1,yr_start2,yr_end2)
+T_out_CESM = extract_T_irr('CESM','TREFHTMX','PD',t_res,yr_start1,yr_end1,yr_start2,yr_end2)
+dT_tot_CRU = T_out_CRU[1] - T_out_CRU[0]
+dT_tot_CESM = T_out_CESM[1] - T_out_CESM[0]
+
+dT_plot_CRU = []
+dT_plot_CESM = []
+df_plot_CRU = []
+df_plot_CESM = []
+
+df_plot_CRU.append(f_irr_CRU[1].ravel()[(~np.isnan(f_irr_CRU[1].ravel())) & (~np.isnan(dT_tot_CRU.ravel()))])
+dT_plot_CRU.append(dT_tot_CRU.ravel()[(~np.isnan(f_irr_CRU[1].ravel())) & (~np.isnan(dT_tot_CRU.ravel()))])
+df_plot_CESM.append(f_irr_CESM.ravel()[(~np.isnan(f_irr_CESM.ravel())) & (~np.isnan(dT_tot_CESM.ravel()))])
+dT_plot_CESM.append(dT_tot_CESM.ravel()[(~np.isnan(f_irr_CESM.ravel())) & (~np.isnan(dT_tot_CESM.ravel()))])
+
+if SREX_region == 'SAS':
+  df_plot_CRU.append(np.append(f_irr_CRU[1,101:133,192:220].ravel()[(~np.isnan(f_irr_CRU[1,101:133,192:220].ravel())) & (~np.isnan(dT_tot_CRU[101:133,192:220].ravel()))],f_irr_CRU[1,117:133,220:225].ravel()[(~np.isnan(f_irr_CRU[1,117:133,220:225].ravel())) & (~np.isnan(dT_tot_CRU[117:133,220:225].ravel()))]))
+  dT_plot_CRU.append(np.append(dT_tot_CRU[101:133,192:220].ravel()[(~np.isnan(f_irr_CRU[1,101:133,192:220].ravel())) & (~np.isnan(dT_tot_CRU[101:133,192:220].ravel()))],dT_tot_CRU[117:133,220:225].ravel()[(~np.isnan(f_irr_CRU[1,117:133,220:225].ravel())) & (~np.isnan(dT_tot_CRU[117:133,220:225].ravel()))]))
+  df_plot_CESM.append(np.append(f_irr_CESM[101:133,192:220].ravel()[(~np.isnan(f_irr_CESM[101:133,192:220].ravel())) & (~np.isnan(dT_tot_CESM[101:133,192:220].ravel()))],f_irr_CESM[117:133,220:225].ravel()[(~np.isnan(f_irr_CESM[117:133,220:225].ravel())) & (~np.isnan(dT_tot_CESM[117:133,220:225].ravel()))]))
+  dT_plot_CESM.append(np.append(dT_tot_CESM[101:133,192:220].ravel()[(~np.isnan(f_irr_CESM[101:133,192:220].ravel())) & (~np.isnan(dT_tot_CESM[101:133,192:220].ravel()))],dT_tot_CESM[117:133,220:225].ravel()[(~np.isnan(f_irr_CESM[117:133,220:225].ravel())) & (~np.isnan(dT_tot_CESM[117:133,220:225].ravel()))]))
+
+bins = np.arange(0,1.,0.1)
+for j in range(0,2):
+  data_dT_CRU = dT_plot_CRU[j]
+  data_dT_CESM = dT_plot_CESM[j]
+  data_df_CRU = df_plot_CRU[j]
+  data_df_CESM = df_plot_CESM[j]
+  
+  means = []
+  pctls = []
+  counts = []
+  
+  for x in range(0,9):
+    if data_dT_CRU[(data_df_CRU >= bins[x]) & (data_df_CRU < bins[x+1])].shape[0] >= 10:
+      counts = data_dT_CRU[(data_df_CRU >= bins[x]) & (data_df_CRU < bins[x+1])].shape[0]
+      means.append(np.median(data_dT_CRU[(data_df_CRU >= bins[x]) & (data_df_CRU < bins[x+1])]))
+      pctls.append(np.percentile(data_dT_CRU[(data_df_CRU >= bins[x]) & (data_df_CRU < bins[x+1])],[25,75]))
+    else:
+      counts = data_dT_CRU[(data_df_CRU >= bins[x]) & (data_df_CRU < bins[x+1])].shape[0]
+      means.append(np.nan)
+      pctls.append(np.array([np.nan,np.nan]))
+      
+  pctls_l = [x[0] for x in pctls]
+  pctls_h = [x[1] for x in pctls]
+  
+  axs[0,j].plot(np.arange(-0.025,0.875,0.1),means,'ks',markersize=4)
+  ax2 = axs[0,j].twinx()
+  ax2.hist(data_df_CRU,bins,color='grey',alpha=0.4)
+  ax2.set_yscale('log')
+
+
+#Calculate dT_irr
+
+CRU_t = np.zeros((9, 192, 288))
+CESM_t = np.zeros((9, 192, 288))
+
+CRU_t[0,:,:], _,_,_,_ = calc_irr_impact_regr('CRU_CESM',temp_product_CRU,response,t_res,0.0,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CRU_t[1,:,:], _,_,_,_ = calc_irr_impact_regr('CRU_CESM',temp_product_CRU,response,t_res,0.1,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CRU_t[2,:,:], _,_,_,_ = calc_irr_impact_regr('CRU_CESM',temp_product_CRU,response,t_res,0.2,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CRU_t[3,:,:], _,_,_,_ = calc_irr_impact_regr('CRU_CESM',temp_product_CRU,response,t_res,0.3,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CRU_t[4,:,:], _,_,_,_ = calc_irr_impact_regr('CRU_CESM',temp_product_CRU,response,t_res,0.4,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CRU_t[5,:,:], _,_,_,_ = calc_irr_impact_regr('CRU_CESM',temp_product_CRU,response,t_res,0.5,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CRU_t[6,:,:], _,_,_,_ = calc_irr_impact_regr('CRU_CESM',temp_product_CRU,response,t_res,0.6,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CRU_t[7,:,:], _,_,_,_ = calc_irr_impact_regr('CRU_CESM',temp_product_CRU,response,t_res,0.7,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CRU_t[8,:,:], _,_,_,_ = calc_irr_impact_regr('CRU_CESM',temp_product_CRU,response,t_res,0.8,False,yr_start1,yr_end1,yr_start2,yr_end2)
+
+CESM_t[0,:,:], _,_,_,_ = calc_irr_impact_regr('CESM',temp_product_CESM,response,t_res,0.0,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CESM_t[1,:,:], _,_,_,_ = calc_irr_impact_regr('CESM',temp_product_CESM,response,t_res,0.1,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CESM_t[2,:,:], _,_,_,_ = calc_irr_impact_regr('CESM',temp_product_CESM,response,t_res,0.2,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CESM_t[3,:,:], _,_,_,_ = calc_irr_impact_regr('CESM',temp_product_CESM,response,t_res,0.3,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CESM_t[4,:,:], _,_,_,_ = calc_irr_impact_regr('CESM',temp_product_CESM,response,t_res,0.4,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CESM_t[5,:,:], _,_,_,_ = calc_irr_impact_regr('CESM',temp_product_CESM,response,t_res,0.5,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CESM_t[6,:,:], _,_,_,_ = calc_irr_impact_regr('CESM',temp_product_CESM,response,t_res,0.6,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CESM_t[7,:,:], _,_,_,_ = calc_irr_impact_regr('CESM',temp_product_CESM,response,t_res,0.7,False,yr_start1,yr_end1,yr_start2,yr_end2)
+CESM_t[8,:,:], _,_,_,_ = calc_irr_impact_regr('CESM',temp_product_CESM,response,t_res,0.8,False,yr_start1,yr_end1,yr_start2,yr_end2)
+
+#Change to 1D, remove NaNs
+CRU0 = CRU_t[0,:,:].ravel()[~np.isnan(CRU_t[0,:,:].ravel())]
+CRU1 = CRU_t[1,:,:].ravel()[~np.isnan(CRU_t[1,:,:].ravel())]
+CRU2 = CRU_t[2,:,:].ravel()[~np.isnan(CRU_t[2,:,:].ravel())]
+CRU3 = CRU_t[3,:,:].ravel()[~np.isnan(CRU_t[3,:,:].ravel())]
+CRU4 = CRU_t[4,:,:].ravel()[~np.isnan(CRU_t[4,:,:].ravel())]
+CRU5 = CRU_t[5,:,:].ravel()[~np.isnan(CRU_t[5,:,:].ravel())]
+CRU6 = CRU_t[6,:,:].ravel()[~np.isnan(CRU_t[6,:,:].ravel())]
+CRU7 = CRU_t[7,:,:].ravel()[~np.isnan(CRU_t[7,:,:].ravel())]
+CRU8 = CRU_t[8,:,:].ravel()[~np.isnan(CRU_t[8,:,:].ravel())]
+
+CESM0 = CESM_t[0,:,:].ravel()[~np.isnan(CESM_t[0,:,:].ravel())]
+CESM1 = CESM_t[1,:,:].ravel()[~np.isnan(CESM_t[1,:,:].ravel())]
+CESM2 = CESM_t[2,:,:].ravel()[~np.isnan(CESM_t[2,:,:].ravel())]
+CESM3 = CESM_t[3,:,:].ravel()[~np.isnan(CESM_t[3,:,:].ravel())]
+CESM4 = CESM_t[4,:,:].ravel()[~np.isnan(CESM_t[4,:,:].ravel())]
+CESM5 = CESM_t[5,:,:].ravel()[~np.isnan(CESM_t[5,:,:].ravel())]
+CESM6 = CESM_t[6,:,:].ravel()[~np.isnan(CESM_t[6,:,:].ravel())]
+CESM7 = CESM_t[7,:,:].ravel()[~np.isnan(CESM_t[7,:,:].ravel())]
+CESM8 = CESM_t[8,:,:].ravel()[~np.isnan(CESM_t[8,:,:].ravel())]
+
+#Plotting results
+
+#Fill bottom left subfigure (dT_irr GIL)
+#Change into format readable by boxplot, removing entries without data if needed
+CRU_data = [CRU0, CRU1, CRU2, CRU3, CRU4, CRU5, CRU6, CRU7, CRU8]
+CRU_dataplot = [x for x in CRU_data if x.shape[0] > 0]
+CRU_lenlist = [x.shape[0] for x in CRU_dataplot]
+
+CESM_data = [CESM0, CESM1, CESM2, CESM3, CESM4, CESM5, CESM6, CESM7, CESM8]
+CESM_dataplot = [x[(x > -999) & (x < 999)] for x in CESM_data if x.shape[0] > 0]
+CESM_lenlist = [x.shape[0] for x in CESM_dataplot]
+
+CRU_medians = [np.median(x) for x in CRU_dataplot]
+CESM_medians = [np.median(x) for x in CESM_dataplot]
+
+CRU_pctls = [np.percentile(x,[25,75]) for x in CRU_dataplot]
+CESM_pctls = [np.percentile(x,[25,75]) for x in CESM_dataplot]
+
+SREX_list = ['Global land','Global irrigated land','%s'%SREX_region,'%s irrigated'%SREX_region]
+
+bins_plot_CRU = np.arange(-0.025,0.875,0.1)
+bins_plot_CESM = np.arange(0.025,0.925,0.1)
+axs[1,0].plot(bins_plot_CRU,CRU_medians,'ks',markersize=4)
+axs[1,0].plot(bins_plot_CESM,CESM_medians,'bs',markersize=4)
+
+for u in range(0,9):
+  axs[1,0].plot((bins_plot_CRU[u],bins_plot_CRU[u]), (CRU_pctls[u][0],CRU_pctls[u][1]), 'k-',linewidth=1.5)
+  axs[1,0].plot((bins_plot_CESM[u],bins_plot_CESM[u]), (CESM_pctls[u][0],CESM_pctls[u][1]), 'b-',linewidth=1.5)
+
+#Fill bottom right subfigure (dT_irr regional)
+if SREX_region == 'EAS':
+  CRU0_reg = CRU_t[0,117:149,224:261].ravel()[~np.isnan(CRU_t[0,117:149,224:261].ravel())]
+  CRU1_reg = CRU_t[1,117:149,224:261].ravel()[~np.isnan(CRU_t[1,117:149,224:261].ravel())]
+  CRU2_reg = CRU_t[2,117:149,224:261].ravel()[~np.isnan(CRU_t[2,117:149,224:261].ravel())]
+  CRU3_reg = CRU_t[3,117:149,224:261].ravel()[~np.isnan(CRU_t[3,117:149,224:261].ravel())]
+  CRU4_reg = CRU_t[4,117:149,224:261].ravel()[~np.isnan(CRU_t[4,117:149,224:261].ravel())]
+  CRU5_reg = CRU_t[5,117:149,224:261].ravel()[~np.isnan(CRU_t[5,117:149,224:261].ravel())]
+  CRU6_reg = CRU_t[6,117:149,224:261].ravel()[~np.isnan(CRU_t[6,117:149,224:261].ravel())]
+  CRU7_reg = CRU_t[7,117:149,224:261].ravel()[~np.isnan(CRU_t[7,117:149,224:261].ravel())]
+  CRU8_reg = CRU_t[8,117:149,224:261].ravel()[~np.isnan(CRU_t[8,117:149,224:261].ravel())]
+
+  CESM0_reg = CESM_t[0,117:149,224:261].ravel()[~np.isnan(CESM_t[0,117:149,224:261].ravel())]
+  CESM1_reg = CESM_t[1,117:149,224:261].ravel()[~np.isnan(CESM_t[1,117:149,224:261].ravel())]
+  CESM2_reg = CESM_t[2,117:149,224:261].ravel()[~np.isnan(CESM_t[2,117:149,224:261].ravel())]
+  CESM3_reg = CESM_t[3,117:149,224:261].ravel()[~np.isnan(CESM_t[3,117:149,224:261].ravel())]
+  CESM4_reg = CESM_t[4,117:149,224:261].ravel()[~np.isnan(CESM_t[4,117:149,224:261].ravel())]
+  CESM5_reg = CESM_t[5,117:149,224:261].ravel()[~np.isnan(CESM_t[5,117:149,224:261].ravel())]
+  CESM6_reg = CESM_t[6,117:149,224:261].ravel()[~np.isnan(CESM_t[6,117:149,224:261].ravel())]
+  CESM7_reg = CESM_t[7,117:149,224:261].ravel()[~np.isnan(CESM_t[7,117:149,224:261].ravel())]
+  CESM8_reg = CESM_t[8,117:149,224:261].ravel()[~np.isnan(CESM_t[8,117:149,224:261].ravel())]
+
+elif SREX_region == 'SAS':
+  CRU0_reg = np.append(CRU_t[0,101:133,192:220].ravel()[~np.isnan(CRU_t[0,101:133,192:220].ravel())],CRU_t[0,117:133,220:225].ravel()[~np.isnan(CRU_t[0,117:133,220:225].ravel())])
+  CRU1_reg = np.append(CRU_t[1,101:133,192:220].ravel()[~np.isnan(CRU_t[1,101:133,192:220].ravel())],CRU_t[1,117:133,220:225].ravel()[~np.isnan(CRU_t[1,117:133,220:225].ravel())])
+  CRU2_reg = np.append(CRU_t[2,101:133,192:220].ravel()[~np.isnan(CRU_t[2,101:133,192:220].ravel())],CRU_t[2,117:133,220:225].ravel()[~np.isnan(CRU_t[2,117:133,220:225].ravel())])
+  CRU3_reg = np.append(CRU_t[3,101:133,192:220].ravel()[~np.isnan(CRU_t[3,101:133,192:220].ravel())],CRU_t[3,117:133,220:225].ravel()[~np.isnan(CRU_t[3,117:133,220:225].ravel())])
+  CRU4_reg = np.append(CRU_t[4,101:133,192:220].ravel()[~np.isnan(CRU_t[4,101:133,192:220].ravel())],CRU_t[4,117:133,220:225].ravel()[~np.isnan(CRU_t[4,117:133,220:225].ravel())])
+  CRU5_reg = np.append(CRU_t[5,101:133,192:220].ravel()[~np.isnan(CRU_t[5,101:133,192:220].ravel())],CRU_t[5,117:133,220:225].ravel()[~np.isnan(CRU_t[5,117:133,220:225].ravel())])
+  CRU6_reg = np.append(CRU_t[6,101:133,192:220].ravel()[~np.isnan(CRU_t[6,101:133,192:220].ravel())],CRU_t[6,117:133,220:225].ravel()[~np.isnan(CRU_t[6,117:133,220:225].ravel())])
+  CRU7_reg = np.append(CRU_t[7,101:133,192:220].ravel()[~np.isnan(CRU_t[7,101:133,192:220].ravel())],CRU_t[7,117:133,220:225].ravel()[~np.isnan(CRU_t[7,117:133,220:225].ravel())])
+  CRU8_reg = np.append(CRU_t[8,101:133,192:220].ravel()[~np.isnan(CRU_t[8,101:133,192:220].ravel())],CRU_t[8,117:133,220:225].ravel()[~np.isnan(CRU_t[8,117:133,220:225].ravel())])
+
+  CESM0_reg = np.append(CESM_t[0,101:133,192:220].ravel()[~np.isnan(CESM_t[0,101:133,192:220].ravel())],CESM_t[0,117:133,220:225].ravel()[~np.isnan(CESM_t[0,117:133,220:225].ravel())])
+  CESM1_reg = np.append(CESM_t[1,101:133,192:220].ravel()[~np.isnan(CESM_t[1,101:133,192:220].ravel())],CESM_t[1,117:133,220:225].ravel()[~np.isnan(CESM_t[1,117:133,220:225].ravel())])
+  CESM2_reg = np.append(CESM_t[2,101:133,192:220].ravel()[~np.isnan(CESM_t[2,101:133,192:220].ravel())],CESM_t[2,117:133,220:225].ravel()[~np.isnan(CESM_t[2,117:133,220:225].ravel())])
+  CESM3_reg = np.append(CESM_t[3,101:133,192:220].ravel()[~np.isnan(CESM_t[3,101:133,192:220].ravel())],CESM_t[3,117:133,220:225].ravel()[~np.isnan(CESM_t[3,117:133,220:225].ravel())])
+  CESM4_reg = np.append(CESM_t[4,101:133,192:220].ravel()[~np.isnan(CESM_t[4,101:133,192:220].ravel())],CESM_t[4,117:133,220:225].ravel()[~np.isnan(CESM_t[4,117:133,220:225].ravel())])
+  CESM5_reg = np.append(CESM_t[5,101:133,192:220].ravel()[~np.isnan(CESM_t[5,101:133,192:220].ravel())],CESM_t[5,117:133,220:225].ravel()[~np.isnan(CESM_t[5,117:133,220:225].ravel())])
+  CESM6_reg = np.append(CESM_t[6,101:133,192:220].ravel()[~np.isnan(CESM_t[6,101:133,192:220].ravel())],CESM_t[6,117:133,220:225].ravel()[~np.isnan(CESM_t[6,117:133,220:225].ravel())])
+  CESM7_reg = np.append(CESM_t[7,101:133,192:220].ravel()[~np.isnan(CESM_t[7,101:133,192:220].ravel())],CESM_t[7,117:133,220:225].ravel()[~np.isnan(CESM_t[7,117:133,220:225].ravel())])
+  CESM8_reg = np.append(CESM_t[8,101:133,192:220].ravel()[~np.isnan(CESM_t[8,101:133,192:220].ravel())],CESM_t[8,117:133,220:225].ravel()[~np.isnan(CESM_t[8,117:133,220:225].ravel())])
+
+CRU_data_reg = [CRU0_reg, CRU1_reg, CRU2_reg, CRU3_reg, CRU4_reg, CRU5_reg, CRU6_reg, CRU7_reg, CRU8_reg]
+CRU_dataplot_reg = [x for x in CRU_data_reg if x.shape[0] > 0]
+CRU_lenlist_reg = [x.shape[0] for x in CRU_dataplot_reg]
+
+CESM_data_reg = [CESM0_reg, CESM1_reg, CESM2_reg, CESM3_reg, CESM4_reg, CESM5_reg, CESM6_reg, CESM7_reg, CESM8_reg]
+CESM_dataplot_reg = [x for x in CESM_data_reg if x.shape[0] > 0]
+CESM_lenlist_reg = [x.shape[0] for x in CESM_dataplot_reg]
+
+CRU_reg_medians = [np.median(x) for x in CRU_dataplot_reg]
+CESM_reg_medians = [np.median(x) for x in CESM_dataplot_reg]
+
+CRU_reg_pctls = [np.percentile(x,[25,75]) for x in CRU_dataplot_reg]
+CESM_reg_pctls = [np.percentile(x,[25,75]) for x in CESM_dataplot_reg]
+
+axs[1,1].plot(bins_plot_CRU,CRU_reg_medians,'ks',markersize=4)
+axs[1,1].plot(bins_plot_CESM,CESM_reg_medians,'bs',markersize=4)
+
+for u in range(0,9):
+  axs[1,1].plot((bins_plot_CRU[u],bins_plot_CRU[u]), (CRU_reg_pctls[u][0],CRU_reg_pctls[u][1]), 'k-',linewidth=1.5)
+  axs[1,1].plot((bins_plot_CESM[u],bins_plot_CESM[u]), (CESM_reg_pctls[u][0],CESM_reg_pctls[u][1]), 'b-',linewidth=1.5)
+
+#b_low = round(round(min([x.min() for x in df_plot])/0.05)*0.05, -int(np.floor(np.log10(0.05))))
+#b_high = round(round(max([x.max() for x in df_plot])/0.05)*0.05, -int(np.ceil(np.log10(0.05))))
+#bins = np.round(np.linspace(b_low,b_high,(abs(b_low)+abs(b_high))/0.05+1),2)
+#bins_plot = bins[:-1]+0.025
+
+##dT_plot = [x/8. for x in dT_plot]
+
+#for ii in range(0,2):
+  #for jj in range(0,2):
+    #data_dT = dT_plot[2*ii+jj]
+    #data_df = df_plot[2*ii+jj]
+    
+    #means = []
+    #pctls = []
+    #counts = []
+    #for x in range(0,len(bins)-1):
+      #if data_dT[(data_df >= bins[x]) & (data_df < bins[x+1])].shape[0] >= 10:
+        #counts = data_dT[(data_df >= bins[x]) & (data_df < bins[x+1])].shape[0]
+        ##means.append(data_dT[(data_df >= bins[x]) & (data_df < bins[x+1])].mean())
+        #means.append(np.median(data_dT[(data_df >= bins[x]) & (data_df < bins[x+1])]))
+        #pctls.append(np.percentile(data_dT[(data_df >= bins[x]) & (data_df < bins[x+1])],[25,75]))
+      #else:
+        #counts = data_dT[(data_df >= bins[x]) & (data_df < bins[x+1])].shape[0]
+        #means.append(np.nan)
+        #pctls.append(np.array([np.nan,np.nan]))
+    
+    #pctls_l = [x[0] for x in pctls]
+    #pctls_h = [x[1] for x in pctls]
+    
+    #axs[ii,jj].plot(bins_plot,means,'ks',markersize=4)
+    #ax2 = axs[ii,jj].twinx()
+    #ax2.hist(data_df,bins,color='white',alpha=0.5)
+    
+    #if ii == 0:
+      #ax2.set_ylim([0,8000])
+      #if jj == 1:
+        #ax2.set_yticks([0,2000,4000])
+      #else:
+        #ax2.set_yticks([])
+        ##axs[ii,jj].axhline(y=2,c='k',linewidth=3)
+      ##axs[ii,jj].axhline(y=-2,c='k',linewidth=3)
+      ##axs[ii,jj].axvline(x=-0.2,c='k',linewidth=3)
+      ##axs[ii,jj].axvline(x=0.85,c='k',linewidth=3)
+    #elif ii == 1:
+      #ax2.set_ylim([0,800])
+      #if jj == 1:
+        #ax2.set_yticks([0,200,400])
+      #else:
+        #ax2.set_yticks([])
+    
+    #for u in range(0,len(pctls_l)):
+      #axs[ii,jj].plot((bins_plot[u],bins_plot[u]), (pctls_l[u],pctls_h[u]), 'k-',linewidth=1.5)
+      
+    ##axs[ii,jj].set_xlim([b_low+0.05,b_high-0.05])
+    #axs[ii,jj].set_xlim([0,0.9])
+    #axs[ii,jj].set_xticks(np.arange(0,1.2,0.3))
+    #axs[ii,jj].set_yticks(np.arange(-2,3,1))
+    #axs[ii,jj].annotate('n=%i'%(data_df.shape[0]),xy=(0.88,1.9),ha='right',va='top')
+    #axs[ii,jj].grid(True)
+    #axs[ii,jj].fill_between([-2,2],0,3,color='salmon',alpha=0.5)
+    #axs[ii,jj].fill_between([-2,2],-3,0,color='lightblue',alpha=0.7)
+    #axs[ii,jj].set_title(SREX_list[2*ii+jj])
+    #axs[ii,jj].set_ylim([-2,2])
+    
+#axs[0,3].set_ylim([-0.25,0.25])
+#axs[1,3].set_ylim([-0.25,0.25])
+f.text(0.47, 0.02, '$f_{irr}$ [-]', ha='center', va='center',fontsize=16)
+f.text(0.98, 0.5, 'Count [-]', ha='center', va='center', rotation=270,fontsize=16)
+f.text(0.47, 0.96, '$t_{ref}$: %i-%i, $t_{PD}$: %i-%i'%(yr_start1,yr_end1,yr_start2,yr_end2),ha='center',va='center',fontsize=14)
+plt.subplots_adjust(left=0.03, right=0.91, top=0.9, bottom=0.1)
+plt.show(block=False)
+  
+#Save results  
+if figsave == True:
+  figpath = '/net/exo/landclim/wthiery/observational_analysis/Figures/%s/%s/binnedboxplots/binnedboxplots_hist.%s.%s.%s.%s.all.%1.2f.%i-%i.%i-%i.%s'%(datasource,temp_product,datasource,temp_product,SREX_region,response,thres_irr_PD,yr_start1,yr_end1,yr_start2,yr_end2,figformat)
+  
+  if os.path.exists(figpath):
+    print('Figure already exists at path: ' + figpath)
+  else:
+    print('Saving figure as:' + figpath)
+    plt.savefig(figpath,bbox_inches='tight')

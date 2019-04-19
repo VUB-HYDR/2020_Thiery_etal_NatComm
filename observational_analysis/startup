@@ -1,0 +1,24 @@
+#!/bin/bash
+
+if [ "$0" = "$BASH_SOURCE" ] && [ "$1" != "n" ] ; then
+echo USAGE
+
+echo "source the file as '. ./startup' to load the conda environment"
+echo ""
+echo "run as './startup n' to start jupyter notebook" 
+
+exit 1
+fi
+
+
+module load conda
+source activate iacpy2_2018
+
+if [ "$1" = "n" ]; then
+  jupyter notebook --browser=chromium
+else
+  echo ''
+  #echo "startup n to start jupyter notebook"
+fi
+
+
