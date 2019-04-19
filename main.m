@@ -5,13 +5,6 @@
 % --------------------------------------------------------------------
 
 
-% to do:
-% - check every line
-
-
-% notes:
-% - observational_analysis uses (likely) PCT_IRRIG but CESM uses PCT_PFT(:,:,17). Differences can be locally significant but I don't expect this affects the matlab calculations
-
 
 tic
 
