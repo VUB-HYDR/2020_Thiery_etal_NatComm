@@ -1,2 +1,2 @@
 # README
-All scripts used to run CESM
+This subdirectory contains all scripts used to run CESM
